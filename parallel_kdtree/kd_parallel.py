@@ -253,17 +253,16 @@ class KDTree(object):
                     self.__build(idx[less_idx],lessmaxes,mins),
                     self.__build(idx[greater_idx],maxes,greatermins))
 
-    def __query(self, rows,i, k, eps, p, distance_upper_bound):
-	
+    def __query(self, rows, offset, k, eps, p, distance_upper_bound_v):
+	counter = offset
 	for x in rows: #Iterate over the rows passed to the core
-	    print i
+	    distance_upper_bound = distance_upper_bound_v #This variable is mutated in the function, we need to reset with each iteration.
 	    side_distances = np.maximum(0,np.maximum(x-self.maxes,self.mins-x))
 	    if p!=np.inf:
 		side_distances**=p
 		min_distance = np.sum(side_distances)
 	    else:
 		min_distance = np.amax(side_distances)
-    
 	    # priority queue for chasing nodes
 	    # entries are:
 	    #  minimum distance between the cell and the target
@@ -276,23 +275,26 @@ class KDTree(object):
 	    # furthest known neighbor first
 	    # entries are (-distance**p, i)
 	    neighbors = []
-    
+	    
 	    if eps==0:
 		epsfac=1
 	    elif p==np.inf:
 		epsfac = 1/(1+eps)
 	    else:
 		epsfac = 1/(1+eps)**p
-    
+	    
+	    if distance_upper_bound != np.inf:
+		print counter
 	    if p!=np.inf and distance_upper_bound!=np.inf:
 		distance_upper_bound = distance_upper_bound**p
-    
+	   
 	    while q:
 		min_distance, side_distances, node = heappop(q)
 		if isinstance(node, KDTree.leafnode):
 		    # brute-force
 		    data = self.data[node.idx]
 		    ds = minkowski_distance_p(data,x[np.newaxis,:],p)
+		    #print counter, len(ds)
 		    for i in range(len(ds)):
 			if ds[i]<distance_upper_bound:
 			    if len(neighbors)==k:
@@ -331,23 +333,22 @@ class KDTree(object):
 		    # far child might be too far, if so, don't bother pushing it
 		    if min_distance<=distance_upper_bound*epsfac:
 			heappush(q,(min_distance, tuple(sd), far))
-    
+
 	    if p==np.inf:
-		print " INF"
+		print i, " INF"
 		#return sorted([(-d,i) for (d,i) in neighbors])
 		pass
 	    else: #This is more likely so alter this line as a test
 		hits = sorted([((-d)**(1./p),i) for (d,i) in neighbors])
+		#print counter,len(neighbors)
 		if k is None:
 		    dd[c] = [d for (d,i) in hits]
 		    ii[c] = [i for (d,i) in hits]
 		elif k>1:
 		    for j in range(len(hits)):
-			sharedDD[i][0+j] = hits[j][0]
-			sharedII[i][0+j] = hits[j][1]
-		    print sharedII[i], hits
-			#dd[c+(j,)], ii[c+(j,)] = hits[j]
-		    i+=1
+			sharedDD[counter][0+j] = hits[j][0]
+			sharedII[counter][0+j] = hits[j][1]
+		counter+=1
 		#elif k==1:
 		    #if len(hits)>0:
 			#dd[c], ii[c] = hits[0]
@@ -449,24 +450,25 @@ class KDTree(object):
         if p<1:
             raise ValueError("Only p-norms with 1<=p<=infinity permitted")
         retshape = np.shape(x)[:-1] #Pulls the number of rows as a tuple.
-	print retshape[0]
         if retshape!=(): #Here we generate empty arrays to store the output - this is where a ctypes array could be used for easier sharing
             if k is None: #I'm not going to touch this since we should never see k=None and ctypes does not have a python object dtype
+		print "This should not happen."
                 dd = np.empty(retshape,dtype=np.object)
                 ii = np.empty(retshape,dtype=np.object)
             elif k>1:
                 #dd = np.empty(retshape+(k,),dtype=np.float)
                 dd_ctype = mp.RawArray(ctypes.c_double, (retshape[0]*k))
-                dd = np.frombuffer(dd_ctype)
+                dd = np.frombuffer(dd_ctype).view(np.float)
                 dd.shape = (retshape[0],k)
-                dd.fill(np.inf)
-                
+                dd[:] = np.inf
                 #ii = np.empty(retshape+(k,),dtype=np.int)
-                ii_ctype = mp.RawArray(ctypes.c_uint, (retshape[0]*k*2)) #This *2 has to do with allocating enough space for a np.uint
-                ii = np.frombuffer(ii_ctype)
+                ii_ctype = mp.RawArray(ctypes.c_int, (retshape[0]*k)) #This *2 has to do with allocating enough space for a np.uint
+                ii = np.frombuffer(ii_ctype).view(np.int)
                 ii.shape = (retshape[0], k)
-                ii.fill(self.n)
+                ii[:] = (self.n)
+		
             elif k==1:
+		print "Not YET Implemented"
 		'''TODO if this works, update this elif as per k>1'''
                 #dd = np.empty(retshape,dtype=np.float)
                 dd_ctype = mp.RawArray(ctypes.c_float, retshape+(k,))
@@ -486,15 +488,15 @@ class KDTree(object):
             #Here we iterate over the array and perform the query
             step_size = retshape[0] // cores #Compute the step size
 	    jobs = []
-	    for i in range(0,retshape[0],step_size):
-		proc = mp.Process(target=self.__query,args=(x[i:i+step_size],i, k, eps, p, distance_upper_bound))
+	    for offset in range(0,retshape[0],step_size):
+		proc = mp.Process(target=self.__query,args=(x[offset:offset+step_size],offset, k, eps, p, distance_upper_bound))
 		jobs.append(proc)
 		
 	    for job in jobs:
 		job.start()
 	    for job in jobs:
 		job.join()	    
-	    print sharedII
+	    #print sharedII
 	    return sharedDD, sharedII
 	    #exit()  
             #for c in np.ndindex(retshape): 

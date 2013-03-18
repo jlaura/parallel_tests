@@ -15,7 +15,6 @@ def g(tup):
     offset = tup[1][0]
     neighbors = {}
     for i, row in enumerate(lines):
-        print i+offset, row
         row = row.tolist()
         row.remove(i+offset)
         neighbors[idset[i]] = list(row)
@@ -73,7 +72,7 @@ pool = mp.Pool(processes = cores)
 #print w
 
 #'''SERIAL'''
-#sizes = [ 10**i for i in range(5,6) ]
+#sizes = [ 10**i for i in range(2,3) ]
 #data = np.random.random_integers(0,100,(sizes[-1],2))
 #for size in sizes:
     #kd = ps.common.KDTree(data)
@@ -88,24 +87,62 @@ pool = mp.Pool(processes = cores)
 #print neighbors
 
 '''SERIAL TO TEST PARALLEL KDQUERY'''
-sizes = [ 10**i for i in range(2,3) ]
+#sizes = [ 10**i for i in range(3,4)]
+#data = np.random.random_integers(0,100,(sizes[-1],2))
+#for size in sizes:
+    #kd = kd_parallel.KDTree(data)
+    #nnq = kd.query(data,k=2+1, p=2)
+    #info = nnq[1] #This is the indices of the neighbors
+    #neighbors = {}
+    #idset = np.arange(len(info)) #Indices of the input point
+    #for i, row in enumerate(info):
+        #row = row.tolist()
+        #row.remove(i)
+        #neighbors[idset[i]] = list(row)
+#print neighbors
+
+'''PARALLEL SINGLE STATEMENT w/ PARALLEL KDQUERY'''
+sizes = [ 10**i for i in range(1,4) ]
 data = np.random.random_integers(0,100,(sizes[-1],2))
 for size in sizes:
+    t1 = time.time()
     kd = kd_parallel.KDTree(data)
+    t2 = time.time()
     nnq = kd.query(data,k=2+1, p=2)
+    t3 = time.time()
     info = nnq[1] #This is the indices of the neighbors
-    #print info 
-    exit()
-    neighbors = {}
-    idset = np.arange(len(info)) #Indices of the input point
-    for i, row in enumerate(info):
-        row = row.tolist()
-        row.remove(i)
-        neighbors[idset[i]] = list(row)
-print neighbors
-
+    slice_size = len(info) / cores
+    id_set = np.arange(len(info))
+    sections = []
+    for line in xrange(0,len(info),slice_size):
+        sections.append((info[line:line+slice_size], id_set[line:line+slice_size]))
+    result_pool = pool.map(g, iterable=sections)
+    result = {}
+    map(result.update, result_pool)  
+    w = ps.weights.W(result)
+    t4 = time.time()
+    print size, " KD Tree || time: {}".format(t2-t1)," KD Query || time: {}".format(t3-t2), " W prep time (multi-core): {}".format(t4-t3), " Total time: {}".format(t4-t1)
+    
+    t1 = time.time()
+    kd = ps.common.KDTree(data)
+    t2 = time.time()
+    nnq = kd.query(data,k=2+1, p=2)
+    t3 = time.time()
+    info = nnq[1] #This is the indices of the neighbors
+    slice_size = len(info) / cores
+    id_set = np.arange(len(info))
+    sections = []
+    for line in xrange(0,len(info),slice_size):
+        sections.append((info[line:line+slice_size], id_set[line:line+slice_size]))
+    result_pool = pool.map(g, iterable=sections)
+    result = {}
+    map(result.update, result_pool)  
+    w = ps.weights.W(result)
+    t4 = time.time()
+    print size, " KD Tree Serial time: {}".format(t2-t1)," KD Query Serial time: {}".format(t3-t2), " W prep time (multi-core): {}".format(t4-t3), " Total time: {}".format(t4-t1)
+    
 '''PARALLEL SINGLE STATEMENT'''
-#sizes = [ 10**i for i in range(5,6) ]
+#sizes = [ 10**i for i in range(2,3) ]
 #print sizes
 #data = np.random.random_integers(0,100,(sizes[-1],2))
 #print "Data generated: ", data
