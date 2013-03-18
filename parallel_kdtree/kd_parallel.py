@@ -5,6 +5,10 @@ import numpy as np
 from heapq import heappush, heappop
 import scipy.sparse
 
+#Jay's additions
+import multiprocessing as mp
+import ctypes
+
 __all__ = ['minkowski_distance_p', 'minkowski_distance',
            'distance_matrix',
            'Rectangle', 'KDTree']
@@ -414,8 +418,8 @@ class KDTree(object):
             raise ValueError("x must consist of vectors of length %d but has shape %s" % (self.m, np.shape(x)))
         if p<1:
             raise ValueError("Only p-norms with 1<=p<=infinity permitted")
-        retshape = np.shape(x)[:-1]
-        if retshape!=():
+        retshape = np.shapex(x)[:-1] #Pulls the number of rows as a tuple.
+        if retshape!=(): #Here we generate empty arrays to store the output - this is where a ctypes array could be used for easier sharing
             if k is None:
                 dd = np.empty(retshape,dtype=np.object)
                 ii = np.empty(retshape,dtype=np.object)
@@ -431,8 +435,11 @@ class KDTree(object):
                 ii.fill(self.n)
             else:
                 raise ValueError("Requested %s nearest neighbors; acceptable numbers are integers greater than or equal to one, or None")
-            for c in np.ndindex(retshape):
+            
+            #Here we iterate over the array and perform the query
+            for c in np.ndindex(retshape): 
                 hits = self.__query(x[c], k=k, eps=eps, p=p, distance_upper_bound=distance_upper_bound)
+                #Here we pack the results.
                 if k is None:
                     dd[c] = [d for (d,i) in hits]
                     ii[c] = [i for (d,i) in hits]

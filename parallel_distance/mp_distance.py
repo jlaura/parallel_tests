@@ -2,6 +2,9 @@ import numpy as np
 import pysal as ps
 import time
 import multiprocessing as mp
+import sys
+
+sys.setrecursionlimit(100000)
 
 def g(tup):
     lines = tup[0]
@@ -84,11 +87,11 @@ for size in sizes:
     print "Slice Size: ", slice_size
     id_set = np.arange(len(info))
     sections = []
-    info.sort(axis=0)
     print info
-    exit()
     for line in xrange(0,len(info),slice_size):
         sections.append((info[line:line+slice_size], id_set[line:line+slice_size]))
+    print sections[1]
+    exit()
     result_pool = pool.map(g, iterable=sections)
     result = {}
     map(result.update, result_pool)  
