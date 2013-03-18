@@ -9,6 +9,8 @@ import scipy.sparse
 import multiprocessing as mp
 import ctypes
 
+cores = mp.cpu_count() * 2 #This is just on my macbook, not times 2 in production
+
 __all__ = ['minkowski_distance_p', 'minkowski_distance',
            'distance_matrix',
            'Rectangle', 'KDTree']
@@ -251,88 +253,116 @@ class KDTree(object):
                     self.__build(idx[less_idx],lessmaxes,mins),
                     self.__build(idx[greater_idx],maxes,greatermins))
 
-    def __query(self, x, k=1, eps=0, p=2, distance_upper_bound=np.inf):
-
-        side_distances = np.maximum(0,np.maximum(x-self.maxes,self.mins-x))
-        if p!=np.inf:
-            side_distances**=p
-            min_distance = np.sum(side_distances)
-        else:
-            min_distance = np.amax(side_distances)
-
-        # priority queue for chasing nodes
-        # entries are:
-        #  minimum distance between the cell and the target
-        #  distances between the nearest side of the cell and the target
-        #  the head node of the cell
-        q = [(min_distance,
-              tuple(side_distances),
-              self.tree)]
-        # priority queue for the nearest neighbors
-        # furthest known neighbor first
-        # entries are (-distance**p, i)
-        neighbors = []
-
-        if eps==0:
-            epsfac=1
-        elif p==np.inf:
-            epsfac = 1/(1+eps)
-        else:
-            epsfac = 1/(1+eps)**p
-
-        if p!=np.inf and distance_upper_bound!=np.inf:
-            distance_upper_bound = distance_upper_bound**p
-
-        while q:
-            min_distance, side_distances, node = heappop(q)
-            if isinstance(node, KDTree.leafnode):
-                # brute-force
-                data = self.data[node.idx]
-                ds = minkowski_distance_p(data,x[np.newaxis,:],p)
-                for i in range(len(ds)):
-                    if ds[i]<distance_upper_bound:
-                        if len(neighbors)==k:
-                            heappop(neighbors)
-                        heappush(neighbors, (-ds[i], node.idx[i]))
-                        if len(neighbors)==k:
-                            distance_upper_bound = -neighbors[0][0]
-            else:
-                # we don't push cells that are too far onto the queue at all,
-                # but since the distance_upper_bound decreases, we might get
-                # here even if the cell's too far
-                if min_distance>distance_upper_bound*epsfac:
-                    # since this is the nearest cell, we're done, bail out
-                    break
-                # compute minimum distances to the children and push them on
-                if x[node.split_dim]<node.split:
-                    near, far = node.less, node.greater
-                else:
-                    near, far = node.greater, node.less
-
-                # near child is at the same distance as the current node
-                heappush(q,(min_distance, side_distances, near))
-
-                # far child is further by an amount depending only
-                # on the split value
-                sd = list(side_distances)
-                if p == np.inf:
-                    min_distance = max(min_distance, abs(node.split-x[node.split_dim]))
-                elif p == 1:
-                    sd[node.split_dim] = np.abs(node.split-x[node.split_dim])
-                    min_distance = min_distance - side_distances[node.split_dim] + sd[node.split_dim]
-                else:
-                    sd[node.split_dim] = np.abs(node.split-x[node.split_dim])**p
-                    min_distance = min_distance - side_distances[node.split_dim] + sd[node.split_dim]
-
-                # far child might be too far, if so, don't bother pushing it
-                if min_distance<=distance_upper_bound*epsfac:
-                    heappush(q,(min_distance, tuple(sd), far))
-
-        if p==np.inf:
-            return sorted([(-d,i) for (d,i) in neighbors])
-        else:
-            return sorted([((-d)**(1./p),i) for (d,i) in neighbors])
-
+    def __query(self, rows,i, k, eps, p, distance_upper_bound):
+	
+	for x in rows: #Iterate over the rows passed to the core
+	    print i
+	    side_distances = np.maximum(0,np.maximum(x-self.maxes,self.mins-x))
+	    if p!=np.inf:
+		side_distances**=p
+		min_distance = np.sum(side_distances)
+	    else:
+		min_distance = np.amax(side_distances)
+    
+	    # priority queue for chasing nodes
+	    # entries are:
+	    #  minimum distance between the cell and the target
+	    #  distances between the nearest side of the cell and the target
+	    #  the head node of the cell
+	    q = [(min_distance,
+		  tuple(side_distances),
+		  self.tree)]
+	    # priority queue for the nearest neighbors
+	    # furthest known neighbor first
+	    # entries are (-distance**p, i)
+	    neighbors = []
+    
+	    if eps==0:
+		epsfac=1
+	    elif p==np.inf:
+		epsfac = 1/(1+eps)
+	    else:
+		epsfac = 1/(1+eps)**p
+    
+	    if p!=np.inf and distance_upper_bound!=np.inf:
+		distance_upper_bound = distance_upper_bound**p
+    
+	    while q:
+		min_distance, side_distances, node = heappop(q)
+		if isinstance(node, KDTree.leafnode):
+		    # brute-force
+		    data = self.data[node.idx]
+		    ds = minkowski_distance_p(data,x[np.newaxis,:],p)
+		    for i in range(len(ds)):
+			if ds[i]<distance_upper_bound:
+			    if len(neighbors)==k:
+				heappop(neighbors)
+			    heappush(neighbors, (-ds[i], node.idx[i]))
+			    if len(neighbors)==k:
+				distance_upper_bound = -neighbors[0][0]
+		else:
+		    # we don't push cells that are too far onto the queue at all,
+		    # but since the distance_upper_bound decreases, we might get
+		    # here even if the cell's too far
+		    if min_distance>distance_upper_bound*epsfac:
+			# since this is the nearest cell, we're done, bail out
+			break
+		    # compute minimum distances to the children and push them on
+		    if x[node.split_dim]<node.split:
+			near, far = node.less, node.greater
+		    else:
+			near, far = node.greater, node.less
+    
+		    # near child is at the same distance as the current node
+		    heappush(q,(min_distance, side_distances, near))
+    
+		    # far child is further by an amount depending only
+		    # on the split value
+		    sd = list(side_distances)
+		    if p == np.inf:
+			min_distance = max(min_distance, abs(node.split-x[node.split_dim]))
+		    elif p == 1:
+			sd[node.split_dim] = np.abs(node.split-x[node.split_dim])
+			min_distance = min_distance - side_distances[node.split_dim] + sd[node.split_dim]
+		    else:
+			sd[node.split_dim] = np.abs(node.split-x[node.split_dim])**p
+			min_distance = min_distance - side_distances[node.split_dim] + sd[node.split_dim]
+    
+		    # far child might be too far, if so, don't bother pushing it
+		    if min_distance<=distance_upper_bound*epsfac:
+			heappush(q,(min_distance, tuple(sd), far))
+    
+	    if p==np.inf:
+		print " INF"
+		#return sorted([(-d,i) for (d,i) in neighbors])
+		pass
+	    else: #This is more likely so alter this line as a test
+		hits = sorted([((-d)**(1./p),i) for (d,i) in neighbors])
+		if k is None:
+		    dd[c] = [d for (d,i) in hits]
+		    ii[c] = [i for (d,i) in hits]
+		elif k>1:
+		    for j in range(len(hits)):
+			sharedDD[i][0+j] = hits[j][0]
+			sharedII[i][0+j] = hits[j][1]
+		    print sharedII[i], hits
+			#dd[c+(j,)], ii[c+(j,)] = hits[j]
+		    i+=1
+		#elif k==1:
+		    #if len(hits)>0:
+			#dd[c], ii[c] = hits[0]
+		    #else:
+			#dd[c] = np.inf
+			#ii[c] = self.n	
+	    
+		#return sorted([((-d)**(1./p),i) for (d,i) in neighbors])
+    
+    def _makeglobal(self, _dd, _ii):
+	global sharedDD
+	global sharedII
+	sharedDD = _dd
+	sharedII = _ii
+	
     def query(self, x, k=1, eps=0, p=2, distance_upper_bound=np.inf):
         """
         Query the kd-tree for nearest neighbors
@@ -418,60 +448,90 @@ class KDTree(object):
             raise ValueError("x must consist of vectors of length %d but has shape %s" % (self.m, np.shape(x)))
         if p<1:
             raise ValueError("Only p-norms with 1<=p<=infinity permitted")
-        retshape = np.shapex(x)[:-1] #Pulls the number of rows as a tuple.
+        retshape = np.shape(x)[:-1] #Pulls the number of rows as a tuple.
+	print retshape[0]
         if retshape!=(): #Here we generate empty arrays to store the output - this is where a ctypes array could be used for easier sharing
-            if k is None:
+            if k is None: #I'm not going to touch this since we should never see k=None and ctypes does not have a python object dtype
                 dd = np.empty(retshape,dtype=np.object)
                 ii = np.empty(retshape,dtype=np.object)
             elif k>1:
-                dd = np.empty(retshape+(k,),dtype=np.float)
+                #dd = np.empty(retshape+(k,),dtype=np.float)
+                dd_ctype = mp.RawArray(ctypes.c_double, (retshape[0]*k))
+                dd = np.frombuffer(dd_ctype)
+                dd.shape = (retshape[0],k)
                 dd.fill(np.inf)
-                ii = np.empty(retshape+(k,),dtype=np.int)
+                
+                #ii = np.empty(retshape+(k,),dtype=np.int)
+                ii_ctype = mp.RawArray(ctypes.c_uint, (retshape[0]*k*2)) #This *2 has to do with allocating enough space for a np.uint
+                ii = np.frombuffer(ii_ctype)
+                ii.shape = (retshape[0], k)
                 ii.fill(self.n)
             elif k==1:
-                dd = np.empty(retshape,dtype=np.float)
-                dd.fill(np.inf)
-                ii = np.empty(retshape,dtype=np.int)
+		'''TODO if this works, update this elif as per k>1'''
+                #dd = np.empty(retshape,dtype=np.float)
+                dd_ctype = mp.RawArray(ctypes.c_float, retshape+(k,))
+                dd = np.frombuffer(dd_ctype)
+                dd.shape = (retshape[0],)
+                dd.fill(np.inf)                
+                #ii = np.empty(retshape,dtype=np.int)
+                ii_ctype = mp.RawArray(ctypes.c_unit, retshape+(k,))
+                ii = np.frombuffer(ii_ctype)
+                ii.shape(retshape[0], k)                
                 ii.fill(self.n)
             else:
                 raise ValueError("Requested %s nearest neighbors; acceptable numbers are integers greater than or equal to one, or None")
             
+            self._makeglobal(dd,ii)
+            
             #Here we iterate over the array and perform the query
-            for c in np.ndindex(retshape): 
-                hits = self.__query(x[c], k=k, eps=eps, p=p, distance_upper_bound=distance_upper_bound)
-                #Here we pack the results.
-                if k is None:
-                    dd[c] = [d for (d,i) in hits]
-                    ii[c] = [i for (d,i) in hits]
-                elif k>1:
-                    for j in range(len(hits)):
-                        dd[c+(j,)], ii[c+(j,)] = hits[j]
-                elif k==1:
-                    if len(hits)>0:
-                        dd[c], ii[c] = hits[0]
-                    else:
-                        dd[c] = np.inf
-                        ii[c] = self.n
-            return dd, ii
-        else:
-            hits = self.__query(x, k=k, eps=eps, p=p, distance_upper_bound=distance_upper_bound)
-            if k is None:
-                return [d for (d,i) in hits], [i for (d,i) in hits]
-            elif k==1:
-                if len(hits)>0:
-                    return hits[0]
-                else:
-                    return np.inf, self.n
-            elif k>1:
-                dd = np.empty(k,dtype=np.float)
-                dd.fill(np.inf)
-                ii = np.empty(k,dtype=np.int)
-                ii.fill(self.n)
-                for j in range(len(hits)):
-                    dd[j], ii[j] = hits[j]
-                return dd, ii
-            else:
-                raise ValueError("Requested %s nearest neighbors; acceptable numbers are integers greater than or equal to one, or None")
+            step_size = retshape[0] // cores #Compute the step size
+	    jobs = []
+	    for i in range(0,retshape[0],step_size):
+		proc = mp.Process(target=self.__query,args=(x[i:i+step_size],i, k, eps, p, distance_upper_bound))
+		jobs.append(proc)
+		
+	    for job in jobs:
+		job.start()
+	    for job in jobs:
+		job.join()	    
+	    print sharedII
+	    return sharedDD, sharedII
+	    #exit()  
+            #for c in np.ndindex(retshape): 
+                #hits = self.__query(x[c], k=k, eps=eps, p=p, distance_upper_bound=distance_upper_bound)
+                ##Here we pack the results.
+                #if k is None:
+                    #dd[c] = [d for (d,i) in hits]
+                    #ii[c] = [i for (d,i) in hits]
+                #elif k>1:
+                    #for j in range(len(hits)):
+                        #dd[c+(j,)], ii[c+(j,)] = hits[j]
+                #elif k==1:
+                    #if len(hits)>0:
+                        #dd[c], ii[c] = hits[0]
+                    #else:
+                        #dd[c] = np.inf
+                        #ii[c] = self.n
+            #return dd, ii
+        #else:
+            #hits = self.__query(x, k=k, eps=eps, p=p, distance_upper_bound=distance_upper_bound)
+            #if k is None:
+                #return [d for (d,i) in hits], [i for (d,i) in hits]
+            #elif k==1:
+                #if len(hits)>0:
+                    #return hits[0]
+                #else:
+                    #return np.inf, self.n
+            #elif k>1:
+                #dd = np.empty(k,dtype=np.float)
+                #dd.fill(np.inf)
+                #ii = np.empty(k,dtype=np.int)
+                #ii.fill(self.n)
+                #for j in range(len(hits)):
+                    #dd[j], ii[j] = hits[j]
+                #return dd, ii
+            #else:
+                #raise ValueError("Requested %s nearest neighbors; acceptable numbers are integers greater than or equal to one, or None")
 
 
     def __query_ball_point(self, x, r, p=2., eps=0):
