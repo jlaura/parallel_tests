@@ -6,7 +6,6 @@ import sys
 
 import kd_parallel
 
-sys.setrecursionlimit(1000000)
 
 def g(tup):
     '''This function is called by a pool of workers to prep the neighbors data.'''
@@ -22,7 +21,6 @@ def g(tup):
 
 
 cores = mp.cpu_count() * 2 #This is just on my macbook, not times 2 in production
-cores
 pool = mp.Pool(processes = cores)
 
 #sizes = [ 10**i for i in range(1,5) ]
@@ -102,16 +100,17 @@ pool = mp.Pool(processes = cores)
 #print neighbors
 
 '''PARALLEL SINGLE STATEMENT w/ PARALLEL KDQUERY'''
-sizes = [ 10**i for i in range(1,4) ]
-data = np.random.random_integers(0,100,(sizes[-1],2))
+sizes = [ 10**i for i in range(1,2) ]
 for size in sizes:
+    data = np.random.random_integers(0,10000,(size,2))
     t1 = time.time()
     kd = kd_parallel.KDTree(data)
     t2 = time.time()
     nnq = kd.query(data,k=2+1, p=2)
     t3 = time.time()
     info = nnq[1] #This is the indices of the neighbors
-    slice_size = len(info) / cores
+    info = info[info[:,0].argsort()]
+    slice_size = len(info) // cores
     id_set = np.arange(len(info))
     sections = []
     for line in xrange(0,len(info),slice_size):
@@ -122,7 +121,7 @@ for size in sizes:
     w = ps.weights.W(result)
     t4 = time.time()
     print size, " KD Tree || time: {}".format(t2-t1)," KD Query || time: {}".format(t3-t2), " W prep time (multi-core): {}".format(t4-t3), " Total time: {}".format(t4-t1)
-    
+
     t1 = time.time()
     kd = ps.common.KDTree(data)
     t2 = time.time()
@@ -132,6 +131,7 @@ for size in sizes:
     slice_size = len(info) / cores
     id_set = np.arange(len(info))
     sections = []
+    
     for line in xrange(0,len(info),slice_size):
         sections.append((info[line:line+slice_size], id_set[line:line+slice_size]))
     result_pool = pool.map(g, iterable=sections)

@@ -179,6 +179,8 @@ class KDTree(object):
     """
     def __init__(self, data, leafsize=10):
         self.data = np.asarray(data)
+	#Check for unique rows
+	self.data = np.unique(self.data.view([('',self.data.dtype)]*self.data.shape[1])).view(self.data.dtype).reshape(-1,self.data.shape[1])
         self.n, self.m = np.shape(self.data)
         self.leafsize = int(leafsize)
         if self.leafsize<1:
