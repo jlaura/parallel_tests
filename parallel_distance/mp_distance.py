@@ -20,8 +20,6 @@ def g(tup):
 
 def main():
 
-    
-    
     cores = mp.cpu_count() * 2 #This is just on my macbook, not times 2 in production
     pool = mp.Pool(processes = cores)
     
@@ -102,7 +100,7 @@ def main():
     #print neighbors
     
     '''PARALLEL SINGLE STATEMENT w/ PARALLEL KDQUERY'''
-    sizes = [ 10**i for i in range(1,2) ]
+    sizes = [ 10**i for i in range(1,5) ]
     for size in sizes:
         data = np.random.random_integers(0,10000,(size,2))
         t1 = time.time()
@@ -122,7 +120,7 @@ def main():
         map(result.update, result_pool)  
         w = ps.weights.W(result)
         t4 = time.time()
-        print size, " KD Tree || time: {}".format(t2-t1)," KD Query || time: {}".format(t3-t2), " W prep time (multi-core): {}".format(t4-t3), " Total time: {}".format(t4-t1)
+        print size, " KD Tree || time: {0}".format(t2-t1)," KD Query || time: {0}".format(t3-t2), " W prep time (multi-core): {0}".format(t4-t3), " Total time: {0}".format(t4-t1)
     
         t1 = time.time()
         kd = ps.common.KDTree(data)
@@ -141,7 +139,7 @@ def main():
         map(result.update, result_pool)  
         w = ps.weights.W(result)
         t4 = time.time()
-        print size, " KD Tree Serial time: {}".format(t2-t1)," KD Query Serial time: {}".format(t3-t2), " W prep time (multi-core): {}".format(t4-t3), " Total time: {}".format(t4-t1)
+        print size, " KD Tree Serial time: {0}".format(t2-t1)," KD Query Serial time: {0}".format(t3-t2), " W prep time (multi-core): {0}".format(t4-t3), " Total time: {0}".format(t4-t1)
         #print w.neighbors
         
     '''PARALLEL SINGLE STATEMENT'''

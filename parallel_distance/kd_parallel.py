@@ -8,13 +8,13 @@ import scipy.sparse
 #Jay's additions
 import multiprocessing as mp
 import ctypes
+import time
 
-cores = mp.cpu_count() * 2 #This is just on my macbook, not times 2 in production
+cores = mp.cpu_count()
 
 __all__ = ['minkowski_distance_p', 'minkowski_distance',
            'distance_matrix',
            'Rectangle', 'KDTree']
-
 
 def minkowski_distance_p(x, y, p=2):
     """
@@ -255,7 +255,11 @@ class KDTree(object):
                     self.__build(idx[less_idx],lessmaxes,mins),
                     self.__build(idx[greater_idx],maxes,greatermins))
 
-    def __query(self, rows, offset, k, eps, p, distance_upper_bound_v):
+    def query_wrapper(self, rows, offset, k, eps, p, distance_upper_bound_v, dd_ctype, ii_ctype, xshape):
+	sharedDD = np.frombuffer(dd_ctype).view(np.float)
+	sharedDD.shape = (xshape,k)
+	sharedII = np.frombuffer(ii_ctype).view(np.int)
+	sharedII.shape = (xshape, k)
 	counter = offset
 	for x in rows: #Iterate over the rows passed to the core
 	    distance_upper_bound = distance_upper_bound_v #This variable is mutated in the function, we need to reset with each iteration.
@@ -491,7 +495,7 @@ class KDTree(object):
             step_size = retshape[0] // cores #Compute the step size
 	    jobs = []
 	    for offset in range(0,retshape[0],step_size):
-		proc = mp.Process(target=self.__query,args=(x[offset:offset+step_size],offset, k, eps, p, distance_upper_bound))
+		proc = mp.Process(target=self.query_wrapper,args=(x[offset:offset+step_size],offset, k, eps, p, distance_upper_bound, dd_ctype, ii_ctype, retshape[0]))
 		jobs.append(proc)
 		
 	    for job in jobs:
