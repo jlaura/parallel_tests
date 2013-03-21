@@ -3,7 +3,7 @@
 import sys
 import numpy as np
 from heapq import heappush, heappop
-import scipy.sparse
+import scipy.sparse #only used to compute a distance matrix between 2 KDTrees - we do not use this.
 
 #Jay's additions
 import multiprocessing as mp
