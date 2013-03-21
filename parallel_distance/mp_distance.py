@@ -100,7 +100,7 @@ def main():
     #print neighbors
     
     '''PARALLEL SINGLE STATEMENT w/ PARALLEL KDQUERY'''
-    sizes = [ 10**i for i in range(1,5) ]
+    sizes = [ (10**i)+3 for i in range(1,5) ]
     for size in sizes:
         data = np.random.random_integers(0,10000,(size,2))
         t1 = time.time()

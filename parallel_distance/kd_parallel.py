@@ -256,9 +256,9 @@ class KDTree(object):
                     self.__build(idx[greater_idx],maxes,greatermins))
 
     def query_wrapper(self, rows, offset, k, eps, p, distance_upper_bound_v, dd_ctype, ii_ctype, xshape):
-	sharedDD = np.frombuffer(dd_ctype).view(np.float)
+	sharedDD = np.frombuffer(dd_ctype,dtype=np.float)
 	sharedDD.shape = (xshape,k)
-	sharedII = np.frombuffer(ii_ctype).view(np.int)
+	sharedII = np.frombuffer(ii_ctype, dtype=np.int)
 	sharedII.shape = (xshape, k)
 	counter = offset
 	for x in rows: #Iterate over the rows passed to the core
@@ -464,12 +464,12 @@ class KDTree(object):
             elif k>1:
                 #dd = np.empty(retshape+(k,),dtype=np.float)
                 dd_ctype = mp.RawArray(ctypes.c_double, (retshape[0]*k))
-                dd = np.frombuffer(dd_ctype).view(np.float)
+                dd = np.frombuffer(dd_ctype, dtype=np.float)
                 dd.shape = (retshape[0],k)
                 dd[:] = np.inf
                 #ii = np.empty(retshape+(k,),dtype=np.int)
                 ii_ctype = mp.RawArray(ctypes.c_int, (retshape[0]*k)) #This *2 has to do with allocating enough space for a np.uint
-                ii = np.frombuffer(ii_ctype).view(np.int)
+                ii = np.frombuffer(ii_ctype, dtype=np.int)
                 ii.shape = (retshape[0], k)
                 ii[:] = (self.n)
 		
@@ -492,7 +492,8 @@ class KDTree(object):
             self._makeglobal(dd,ii)
             
             #Here we iterate over the array and perform the query
-            step_size = retshape[0] // cores #Compute the step size
+            step_size = retshape[0] / cores #Compute the step size
+	    print step_size
 	    jobs = []
 	    for offset in range(0,retshape[0],step_size):
 		proc = mp.Process(target=self.query_wrapper,args=(x[offset:offset+step_size],offset, k, eps, p, distance_upper_bound, dd_ctype, ii_ctype, retshape[0]))
