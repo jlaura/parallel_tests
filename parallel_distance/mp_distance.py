@@ -100,7 +100,7 @@ pool = mp.Pool(processes = cores)
 #print neighbors
 
 '''PARALLEL SINGLE STATEMENT w/ PARALLEL KDQUERY'''
-sizes = [ 10**i for i in range(1,2) ]
+sizes = [ 10**i for i in range(1,4) ]
 for size in sizes:
     data = np.random.random_integers(0,10000,(size,2))
     t1 = time.time()
@@ -140,6 +140,7 @@ for size in sizes:
     w = ps.weights.W(result)
     t4 = time.time()
     print size, " KD Tree Serial time: {}".format(t2-t1)," KD Query Serial time: {}".format(t3-t2), " W prep time (multi-core): {}".format(t4-t3), " Total time: {}".format(t4-t1)
+    #print w.neighbors
     
 '''PARALLEL SINGLE STATEMENT'''
 #sizes = [ 10**i for i in range(2,3) ]

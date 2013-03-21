@@ -123,6 +123,26 @@ class Rectangle(object):
         """Compute the maximum distance between points in the two hyperrectangles."""
         return minkowski_distance(0, np.maximum(self.maxes-other.mins,other.maxes-self.mins),p)
 
+class node(object):
+    if sys.version_info[0] >= 3:
+	def __lt__(self, other): id(self) < id(other)
+	def __gt__(self, other): id(self) > id(other)
+	def __le__(self, other): id(self) <= id(other)
+	def __ge__(self, other): id(self) >= id(other)
+	def __eq__(self, other): id(self) == id(other)
+
+class leafnode(node):
+    def __init__(self, idx):
+	self.idx = idx
+	self.children = len(idx)
+
+class innernode(node):
+    def __init__(self, split_dim, split, less, greater):
+	self.split_dim = split_dim
+	self.split = split
+	self.less = less
+	self.greater = greater
+	self.children = less.children+greater.children
 
 class KDTree(object):
     """
@@ -180,7 +200,8 @@ class KDTree(object):
     def __init__(self, data, leafsize=10):
         self.data = np.asarray(data)
 	#Check for unique rows
-	self.data = np.unique(self.data.view([('',self.data.dtype)]*self.data.shape[1])).view(self.data.dtype).reshape(-1,self.data.shape[1])
+	unique = np.unique(self.data.view([('',self.data.dtype)]*self.data.shape[1])).view(self.data.dtype).reshape(-1,self.data.shape[1])
+	#Alert for duplicate rows?
         self.n, self.m = np.shape(self.data)
         self.leafsize = int(leafsize)
         if self.leafsize<1:
@@ -190,30 +211,9 @@ class KDTree(object):
 
         self.tree = self.__build(np.arange(self.n), self.maxes, self.mins)
 
-    class node(object):
-        if sys.version_info[0] >= 3:
-            def __lt__(self, other): id(self) < id(other)
-            def __gt__(self, other): id(self) > id(other)
-            def __le__(self, other): id(self) <= id(other)
-            def __ge__(self, other): id(self) >= id(other)
-            def __eq__(self, other): id(self) == id(other)
-
-    class leafnode(node):
-        def __init__(self, idx):
-            self.idx = idx
-            self.children = len(idx)
-
-    class innernode(node):
-        def __init__(self, split_dim, split, less, greater):
-            self.split_dim = split_dim
-            self.split = split
-            self.less = less
-            self.greater = greater
-            self.children = less.children+greater.children
-
     def __build(self, idx, maxes, mins):
         if len(idx)<=self.leafsize:
-            return KDTree.leafnode(idx)
+            return leafnode(idx)
         else:
             data = self.data[idx]
             #maxes = np.amax(data,axis=0)
@@ -223,7 +223,7 @@ class KDTree(object):
             minval = mins[d]
             if maxval==minval:
                 # all points are identical; warn user?
-                return KDTree.leafnode(idx)
+                return leafnode(idx)
             data = data[:,d]
 
             # sliding midpoint rule; see Maneewongvatana and Mount 1999
@@ -251,7 +251,7 @@ class KDTree(object):
             lessmaxes[d] = split
             greatermins = np.copy(mins)
             greatermins[d] = split
-            return KDTree.innernode(d, split,
+            return innernode(d, split,
                     self.__build(idx[less_idx],lessmaxes,mins),
                     self.__build(idx[greater_idx],maxes,greatermins))
 
@@ -292,7 +292,7 @@ class KDTree(object):
 	   
 	    while q:
 		min_distance, side_distances, node = heappop(q)
-		if isinstance(node, KDTree.leafnode):
+		if isinstance(node, leafnode):
 		    # brute-force
 		    data = self.data[node.idx]
 		    ds = minkowski_distance_p(data,x[np.newaxis,:],p)
@@ -546,7 +546,7 @@ class KDTree(object):
                 return []
             elif rect.max_distance_point(x, p) < r * (1. + eps):
                 return traverse_no_checking(node)
-            elif isinstance(node, KDTree.leafnode):
+            elif isinstance(node, leafnode):
                 d = self.data[node.idx]
                 return node.idx[minkowski_distance(d, x, p) <= r].tolist()
             else:
@@ -555,7 +555,7 @@ class KDTree(object):
                        traverse_checking(node.greater, greater)
 
         def traverse_no_checking(node):
-            if isinstance(node, KDTree.leafnode):
+            if isinstance(node, leafnode):
                 return node.idx.tolist()
             else:
                 return traverse_no_checking(node.less) + \
@@ -647,8 +647,8 @@ class KDTree(object):
                 return
             elif rect1.max_distance_rectangle(rect2, p)<r*(1.+eps):
                 traverse_no_checking(node1, node2)
-            elif isinstance(node1, KDTree.leafnode):
-                if isinstance(node2, KDTree.leafnode):
+            elif isinstance(node1, leafnode):
+                if isinstance(node2, leafnode):
                     d = other.data[node2.idx]
                     for i in node1.idx:
                         results[i] += node2.idx[minkowski_distance(d,self.data[i],p)<=r].tolist()
@@ -656,7 +656,7 @@ class KDTree(object):
                     less, greater = rect2.split(node2.split_dim, node2.split)
                     traverse_checking(node1,rect1,node2.less,less)
                     traverse_checking(node1,rect1,node2.greater,greater)
-            elif isinstance(node2, KDTree.leafnode):
+            elif isinstance(node2, leafnode):
                 less, greater = rect1.split(node1.split_dim, node1.split)
                 traverse_checking(node1.less,less,node2,rect2)
                 traverse_checking(node1.greater,greater,node2,rect2)
@@ -669,8 +669,8 @@ class KDTree(object):
                 traverse_checking(node1.greater,greater1,node2.greater,greater2)
 
         def traverse_no_checking(node1, node2):
-            if isinstance(node1, KDTree.leafnode):
-                if isinstance(node2, KDTree.leafnode):
+            if isinstance(node1, leafnode):
+                if isinstance(node2, leafnode):
                     for i in node1.idx:
                         results[i] += node2.idx.tolist()
                 else:
@@ -713,8 +713,8 @@ class KDTree(object):
                 return
             elif rect1.max_distance_rectangle(rect2, p)<r*(1.+eps):
                 traverse_no_checking(node1, node2)
-            elif isinstance(node1, KDTree.leafnode):
-                if isinstance(node2, KDTree.leafnode):
+            elif isinstance(node1, leafnode):
+                if isinstance(node2, leafnode):
                     # Special care to avoid duplicate pairs
                     if id(node1) == id(node2):
                         d = self.data[node2.idx]
@@ -734,7 +734,7 @@ class KDTree(object):
                     less, greater = rect2.split(node2.split_dim, node2.split)
                     traverse_checking(node1,rect1,node2.less,less)
                     traverse_checking(node1,rect1,node2.greater,greater)
-            elif isinstance(node2, KDTree.leafnode):
+            elif isinstance(node2, leafnode):
                 less, greater = rect1.split(node1.split_dim, node1.split)
                 traverse_checking(node1.less,less,node2,rect2)
                 traverse_checking(node1.greater,greater,node2,rect2)
@@ -754,8 +754,8 @@ class KDTree(object):
                 traverse_checking(node1.greater,greater1,node2.greater,greater2)
 
         def traverse_no_checking(node1, node2):
-            if isinstance(node1, KDTree.leafnode):
-                if isinstance(node2, KDTree.leafnode):
+            if isinstance(node1, leafnode):
+                if isinstance(node2, leafnode):
                     # Special care to avoid duplicate pairs
                     if id(node1) == id(node2):
                         for i in node1.idx:
@@ -826,8 +826,8 @@ class KDTree(object):
             if len(idx)==0:
                 return
 
-            if isinstance(node1,KDTree.leafnode):
-                if isinstance(node2,KDTree.leafnode):
+            if isinstance(node1,leafnode):
+                if isinstance(node2,leafnode):
                     ds = minkowski_distance(self.data[node1.idx][:,np.newaxis,:],
                                   other.data[node2.idx][np.newaxis,:,:],
                                   p).ravel()
@@ -838,7 +838,7 @@ class KDTree(object):
                     traverse(node1, rect1, node2.less, less, idx)
                     traverse(node1, rect1, node2.greater, greater, idx)
             else:
-                if isinstance(node2,KDTree.leafnode):
+                if isinstance(node2,leafnode):
                     less, greater = rect1.split(node1.split_dim, node1.split)
                     traverse(node1.less, less, node2, rect2, idx)
                     traverse(node1.greater, greater, node2, rect2, idx)
@@ -889,8 +889,8 @@ class KDTree(object):
         def traverse(node1, rect1, node2, rect2):
             if rect1.min_distance_rectangle(rect2, p)>max_distance:
                 return
-            elif isinstance(node1, KDTree.leafnode):
-                if isinstance(node2, KDTree.leafnode):
+            elif isinstance(node1, leafnode):
+                if isinstance(node2, leafnode):
                     for i in node1.idx:
                         for j in node2.idx:
                             d = minkowski_distance(self.data[i],other.data[j],p)
@@ -900,7 +900,7 @@ class KDTree(object):
                     less, greater = rect2.split(node2.split_dim, node2.split)
                     traverse(node1,rect1,node2.less,less)
                     traverse(node1,rect1,node2.greater,greater)
-            elif isinstance(node2, KDTree.leafnode):
+            elif isinstance(node2, leafnode):
                 less, greater = rect1.split(node1.split_dim, node1.split)
                 traverse(node1.less,less,node2,rect2)
                 traverse(node1.greater,greater,node2,rect2)
